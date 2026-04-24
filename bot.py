@@ -163,36 +163,57 @@ def parse_any_embed(embed: discord.Embed) -> dict | None:
 def build_claim_embed(cart: dict, custom_msg: str, pas: str) -> discord.Embed:
     event_name = cart.get("event", "")
 
-    # Description compacte : tout en une seule zone
-    lines = []
+    embed = discord.Embed(
+        title="🎟️  Cart disponible",
+        description=f"*{custom_msg}*",
+        color=0x2B2D31,
+    )
+
+    # Événement pleine largeur
     if event_name:
-        lines.append(f"### {event_name}")
-    lines.append(f"-# {custom_msg}")
-    lines.append("")
+        embed.add_field(name="🎤  Événement", value=f"**{event_name}**", inline=False)
 
-    info = []
-    if cart.get("site"):       info.append(f"**Site** — {cart['site']}")
-    if cart.get("event_date"): info.append(f"**Date** — {cart['event_date']}")
-    if cart.get("section"):    info.append(f"**Cat.** — {cart['section']}")
-    if cart.get("seats"):      info.append(f"**Places** — {cart['seats']}")
-    if cart.get("row"):        info.append(f"**Rangée** — {cart['row']}")
-    if cart.get("price"):      info.append(f"**Prix** — {cart['price']}")
-    if cart.get("access"):     info.append(f"**Accès** — {cart['access']}")
-    lines.extend(info)
+    # Site + Date sur la même ligne
+    if cart.get("site"):
+        embed.add_field(name="🌐  Site", value=cart["site"], inline=True)
+    if cart.get("event_date"):
+        embed.add_field(name="📅  Date", value=cart["event_date"], inline=True)
+    if cart.get("site") and cart.get("event_date"):
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
 
+    # Catégorie pleine largeur
+    if cart.get("section"):
+        embed.add_field(name="🏟️  Catégorie", value=f"`{cart['section']}`", inline=False)
+
+    # Places + Rangée + Prix
+    if cart.get("seats"):
+        embed.add_field(name="💺  Places", value=cart["seats"], inline=True)
+    if cart.get("row"):
+        embed.add_field(name="📍  Rangée", value=cart["row"], inline=True)
+    if cart.get("price"):
+        embed.add_field(name="💶  Prix", value=cart["price"], inline=True)
+
+    # Accès + Expiration sur la même ligne
+    if cart.get("access"):
+        embed.add_field(name="🚪  Accès", value=cart["access"], inline=True)
     ts = cart.get("expires_ts")
     if ts == -1:
-        lines.append(f"**Expire** — ~~expiré~~")
+        embed.add_field(name="⏳  Expire", value="~~expiré~~", inline=True)
     elif ts:
-        lines.append(f"**Expire** — <t:{ts}:R>")
+        embed.add_field(name="⏳  Expire", value=f"<t:{ts}:R>", inline=True)
 
-    lines.append("")
-    lines.append(f"💳 **PAS — {pas} € / ticket**")
-    lines.append(f"-# ⚠️ En cliquant sur Claim Cart, vous certifiez disposer des extensions requises et vous engagez à honorer le PAS.")
+    # PAS
+    embed.add_field(
+        name="💳  Pay After Success",
+        value=f"`{pas} € / ticket`",
+        inline=False
+    )
 
-    embed = discord.Embed(
-        description="\n".join(lines),
-        color=0x2B2D31,
+    # Avertissement compact
+    embed.add_field(
+        name="\u200b",
+        value="-# ⚠️ En cliquant sur Claim Cart, vous certifiez disposer des extensions requises et vous engagez à honorer le PAS.",
+        inline=False
     )
 
     if cart.get("image_url"):
@@ -460,4 +481,3 @@ if not TOKEN:
     raise ValueError("❌ Variable d'environnement DISCORD_TOKEN manquante !")
 
 bot.run(TOKEN)
- 
