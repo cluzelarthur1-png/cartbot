@@ -4,14 +4,14 @@ from discord import app_commands
 import re
 import json
 import os
+import asyncio
 
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
-CART_CHANNEL_NAME   = "carts"          # salon où KalysBot poste
-CLAIM_CHANNEL_NAME  = "claims"         # salon où ton bot reposte
-TICKET_CATEGORY_NAME = "tickets"       # catégorie pour les tickets
-KALYSBOT_NAME       = "KalysBot"       # nom exact du bot à écouter
-ADMIN_ROLE_NAME     = "Admin"          # nom du rôle admin sur ton serveur
-CONFIG_FILE         = "config.json"    # fichier de config persistant
+CART_CHANNEL_NAME    = "carts"
+CLAIM_CHANNEL_NAME   = "claims"
+TICKET_CATEGORY_NAME = "tickets"
+ADMIN_ROLE_NAME      = "Admin"
+CONFIG_FILE          = "config.json"
 # ──────────────────────────────────────────────────────────────────────────────
 
 intents = discord.Intents.default()
@@ -25,99 +25,102 @@ def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
-    return {"custom_message": "⚡ Premier arrivé, premier servi ! Clique vite."}
+    return {
+        "custom_message": "⚡ Premier arrivé, premier servi ! Clique vite.",
+        "pas": "10"
+    }
 
-def save_config(config):
+def save_config(cfg):
     with open(CONFIG_FILE, "w") as f:
-        json.dump(config, f, indent=2)
+        json.dump(cfg, f, indent=2)
 
 config = load_config()
 
-# ─── PARSER EMBED KALYSBOT ────────────────────────────────────────────────────
-def parse_kalysbot_embed(embed: discord.Embed) -> dict | None:
-    """Extrait les infos d'un embed KalysBot Cart Ready."""
-    if not embed.title or "Cart Ready" not in embed.title:
-        return None
-
+# ─── PARSER EMBED ─────────────────────────────────────────────────────────────
+def parse_any_embed(embed: discord.Embed) -> dict | None:
     data = {
-        "site": None,
-        "event": None,
-        "section": None,
-        "seats": None,
-        "row": None,
-        "access": None,
-        "price": None,
-        "event_date": None,
+        "site": None, "event": None, "section": None,
+        "seats": None, "row": None, "access": None,
+        "price": None, "event_date": None,
     }
 
     for field in embed.fields:
         name  = field.name.strip().lower()
         value = field.value.strip()
+        if "site" in name:                               data["site"]       = value
+        elif "event" in name and "date" not in name:    data["event"]      = value
+        elif "section" in name or "categ" in name:      data["section"]    = value
+        elif "seat" in name or "place" in name:         data["seats"]      = value
+        elif "row" in name or "rang" in name:           data["row"]        = value
+        elif "access" in name:                          data["access"]     = value
+        elif "price" in name or "prix" in name:        data["price"]      = value
+        elif "date" in name:                            data["event_date"] = value
 
-        if name == "site":
-            data["site"] = value
-        elif name == "event":
-            data["event"] = value
-        elif name == "section":
-            data["section"] = value
-        elif name == "seats":
-            data["seats"] = value
-        elif name == "row":
-            data["row"] = value
-        elif name == "access":
-            data["access"] = value
-        elif name == "price":
-            data["price"] = value
-        elif name == "event date":
-            data["event_date"] = value
-
-    # Fallback : parse depuis la description si fields vides
     if not data["event"] and embed.description:
-        match = re.search(r"Event[:\s]+(.+)", embed.description, re.IGNORECASE)
-        if match:
-            data["event"] = match.group(1).strip()
+        m = re.search(r"Event[:\s]+(.+)", embed.description, re.IGNORECASE)
+        if m:
+            data["event"] = m.group(1).strip()
+
+    if not any(data.values()):
+        return None
 
     return data
 
 # ─── EMBED CLAIM ──────────────────────────────────────────────────────────────
-def build_claim_embed(cart: dict, custom_msg: str) -> discord.Embed:
+def build_claim_embed(cart: dict, custom_msg: str, pas: str) -> discord.Embed:
     embed = discord.Embed(
-        title="🛒 Cart disponible !",
-        color=0x5865F2,
+        title="🎟️  Cart disponible !",
+        description=f">>> {custom_msg}",
+        color=0xE8B84B,
     )
-    if cart.get("site"):
-        embed.add_field(name="🌐 Site",        value=cart["site"],       inline=True)
-    if cart.get("event"):
-        embed.add_field(name="🎤 Événement",   value=cart["event"],      inline=True)
-    if cart.get("event_date"):
-        embed.add_field(name="📅 Date",         value=cart["event_date"], inline=True)
-    if cart.get("section"):
-        embed.add_field(name="🏟️ Catégorie",   value=cart["section"],    inline=False)
-    if cart.get("seats"):
-        embed.add_field(name="💺 Places",       value=cart["seats"],      inline=True)
-    if cart.get("row"):
-        embed.add_field(name="📍 Rangée",       value=cart["row"],        inline=True)
-    if cart.get("price"):
-        embed.add_field(name="💶 Prix",         value=cart["price"],      inline=True)
-    if cart.get("access"):
-        embed.add_field(name="🚪 Accès",        value=cart["access"],     inline=True)
 
-    embed.add_field(name="\u200b", value=f"_{custom_msg}_", inline=False)
-    embed.set_footer(text="Clique sur le bouton pour ouvrir un ticket")
+    embed.add_field(name="⎯" * 28, value="", inline=False)
+
+    if cart.get("event"):
+        embed.add_field(name="🎤  Événement", value=f"**{cart['event']}**", inline=False)
+
+    row1 = []
+    if cart.get("site"):       row1.append(f"🌐  **Site**\n{cart['site']}")
+    if cart.get("event_date"): row1.append(f"📅  **Date**\n{cart['event_date']}")
+    for r in row1:
+        embed.add_field(name="\u200b", value=r, inline=True)
+    if len(row1) == 2:
+        embed.add_field(name="\u200b", value="\u200b", inline=True)
+
+    if cart.get("section"):
+        embed.add_field(name="🏟️  Catégorie", value=f"```{cart['section']}```", inline=False)
+
+    row2 = []
+    if cart.get("seats"): row2.append(f"💺  **Places**\n{cart['seats']}")
+    if cart.get("row"):   row2.append(f"📍  **Rangée**\n{cart['row']}")
+    if cart.get("price"): row2.append(f"💶  **Prix total**\n{cart['price']}")
+    for r in row2:
+        embed.add_field(name="\u200b", value=r, inline=True)
+
+    if cart.get("access"):
+        embed.add_field(name="🚪  Accès", value=cart["access"], inline=False)
+
+    embed.add_field(name="⎯" * 28, value="", inline=False)
+    embed.add_field(
+        name="💳  Pay After Success (PAS)",
+        value=f"```{pas} € par ticket```",
+        inline=False
+    )
+
+    embed.set_footer(text="Clique sur 🎫 Claim Cart pour ouvrir un ticket privé")
     return embed
 
 # ─── VUE BOUTON CLAIM ─────────────────────────────────────────────────────────
 class ClaimView(discord.ui.View):
     def __init__(self, cart: dict):
-        super().__init__(timeout=None)  # persistent
+        super().__init__(timeout=None)
         self.cart = cart
 
-    @discord.ui.button(label="🎫 Claim Cart", style=discord.ButtonStyle.success, custom_id="claim_cart")
+    @discord.ui.button(label="🎫  Claim Cart", style=discord.ButtonStyle.success, custom_id="claim_cart")
     async def claim_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         guild = interaction.guild
         user  = interaction.user
 
-        # Vérifie si un ticket existe déjà pour cet user
         existing = discord.utils.get(
             guild.text_channels,
             name=f"ticket-{user.name.lower().replace(' ', '-')}"
@@ -128,15 +131,12 @@ class ClaimView(discord.ui.View):
             )
             return
 
-        # Catégorie tickets
         category = discord.utils.get(guild.categories, name=TICKET_CATEGORY_NAME)
         if not category:
             category = await guild.create_category(TICKET_CATEGORY_NAME)
 
-        # Rôle admin
         admin_role = discord.utils.get(guild.roles, name=ADMIN_ROLE_NAME)
 
-        # Permissions du salon ticket
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             user: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
@@ -149,29 +149,35 @@ class ClaimView(discord.ui.View):
             name=f"ticket-{user.name.lower().replace(' ', '-')}",
             category=category,
             overwrites=overwrites,
-            topic=f"Ticket cart pour {user.display_name}"
+            topic=f"Ticket cart — {user.display_name}"
         )
 
-        # Message dans le ticket
         ticket_embed = discord.Embed(
-            title=f"🎫 Ticket de {user.display_name}",
-            description=f"Bonjour {user.mention} ! Voici les détails du cart que tu as claim.",
+            title=f"🎫  Ticket — {user.display_name}",
+            description=f"Bienvenue {user.mention} ! Un admin va te contacter rapidement.\n\nVoici le récap du cart :",
             color=0x57F287,
         )
         cart = self.cart
         if cart.get("event"):
-            ticket_embed.add_field(name="🎤 Événement",  value=cart["event"],      inline=True)
-        if cart.get("event_date"):
-            ticket_embed.add_field(name="📅 Date",        value=cart["event_date"], inline=True)
+            ticket_embed.add_field(name="🎤  Événement", value=f"**{cart['event']}**", inline=False)
+
+        row = []
+        if cart.get("event_date"): row.append(f"📅  **Date**\n{cart['event_date']}")
+        if cart.get("seats"):      row.append(f"💺  **Places**\n{cart['seats']}")
+        if cart.get("price"):      row.append(f"💶  **Prix**\n{cart['price']}")
+        for r in row:
+            ticket_embed.add_field(name="\u200b", value=r, inline=True)
+
         if cart.get("section"):
-            ticket_embed.add_field(name="🏟️ Catégorie",  value=cart["section"],    inline=False)
-        if cart.get("seats"):
-            ticket_embed.add_field(name="💺 Places",      value=cart["seats"],      inline=True)
-        if cart.get("price"):
-            ticket_embed.add_field(name="💶 Prix",        value=cart["price"],      inline=True)
-        if cart.get("site"):
-            ticket_embed.add_field(name="🌐 Site",        value=cart["site"],       inline=True)
-        ticket_embed.set_footer(text="Un admin va te contacter rapidement.")
+            ticket_embed.add_field(name="🏟️  Catégorie", value=f"```{cart['section']}```", inline=False)
+
+        pas = config.get("pas", "?")
+        ticket_embed.add_field(
+            name="💳  PAS",
+            value=f"```{pas} € par ticket```",
+            inline=False
+        )
+        ticket_embed.set_footer(text="Ferme le ticket avec le bouton ci-dessous une fois terminé.")
 
         close_view = CloseView()
         await ticket_channel.send(
@@ -181,12 +187,11 @@ class ClaimView(discord.ui.View):
         )
 
         await interaction.response.send_message(
-            f"✅ Ton ticket a été créé : {ticket_channel.mention}", ephemeral=True
+            f"✅ Ticket créé : {ticket_channel.mention}", ephemeral=True
         )
 
-        # Désactive le bouton après claim
         button.disabled = True
-        button.label = f"✅ Claimé par {user.display_name}"
+        button.label = f"✅  Claimé par {user.display_name}"
         button.style = discord.ButtonStyle.secondary
         await interaction.message.edit(view=self)
 
@@ -196,10 +201,9 @@ class CloseView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="🔒 Fermer le ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket")
+    @discord.ui.button(label="🔒  Fermer le ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket")
     async def close_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message("🔒 Fermeture du ticket dans 5 secondes...")
-        import asyncio
+        await interaction.response.send_message("🔒 Fermeture dans 5 secondes...")
         await asyncio.sleep(5)
         await interaction.channel.delete()
 
@@ -216,59 +220,65 @@ async def on_ready():
 
 @bot.event
 async def on_message(message: discord.Message):
-    # Ignore ses propres messages
     if message.author == bot.user:
         return
 
-    # Écoute seulement dans #carts
     if message.channel.name != CART_CHANNEL_NAME:
         await bot.process_commands(message)
         return
 
-    # Écoute seulement KalysBot
-    if message.author.name != KALYSBOT_NAME:
-        await bot.process_commands(message)
-        return
-
-    # Parse les embeds
     for embed in message.embeds:
-        cart = parse_kalysbot_embed(embed)
+        cart = parse_any_embed(embed)
         if cart:
             claim_channel = discord.utils.get(message.guild.text_channels, name=CLAIM_CHANNEL_NAME)
             if not claim_channel:
                 print(f"⚠️ Salon #{CLAIM_CHANNEL_NAME} introuvable !")
                 return
 
-            claim_embed = build_claim_embed(cart, config["custom_message"])
+            claim_embed = build_claim_embed(cart, config["custom_message"], config.get("pas", "?"))
             view = ClaimView(cart)
             await claim_channel.send(embed=claim_embed, view=view)
-            print(f"✅ Cart relayé pour {cart.get('event', 'inconnu')}")
+            print(f"✅ Cart relayé : {cart.get('event', 'inconnu')}")
             break
 
     await bot.process_commands(message)
 
-# ─── COMMANDE /setmessage ─────────────────────────────────────────────────────
-@bot.tree.command(name="setmessage", description="Change le message personnalisé affiché sur les carts")
-@app_commands.describe(message="Le nouveau message à afficher sous les carts")
+# ─── COMMANDES SLASH ──────────────────────────────────────────────────────────
+
+@bot.tree.command(name="setmessage", description="Change le message affiché sur les carts")
+@app_commands.describe(message="Le nouveau message")
 @app_commands.checks.has_role(ADMIN_ROLE_NAME)
 async def setmessage(interaction: discord.Interaction, message: str):
     config["custom_message"] = message
     save_config(config)
-    await interaction.response.send_message(
-        f"✅ Message mis à jour :\n> _{message}_", ephemeral=True
-    )
+    await interaction.response.send_message(f"✅ Message mis à jour :\n> _{message}_", ephemeral=True)
 
 @setmessage.error
 async def setmessage_error(interaction: discord.Interaction, error):
     if isinstance(error, app_commands.MissingRole):
-        await interaction.response.send_message("❌ Tu n'as pas la permission.", ephemeral=True)
+        await interaction.response.send_message("❌ Permission refusée.", ephemeral=True)
 
-# ─── COMMANDE /viewmessage ────────────────────────────────────────────────────
-@bot.tree.command(name="viewmessage", description="Affiche le message personnalisé actuel")
-async def viewmessage(interaction: discord.Interaction):
+@bot.tree.command(name="setpas", description="Définit le montant du PAS (Pay After Success) en €")
+@app_commands.describe(montant="Montant en € par ticket (ex: 15)")
+@app_commands.checks.has_role(ADMIN_ROLE_NAME)
+async def setpas(interaction: discord.Interaction, montant: str):
+    config["pas"] = montant
+    save_config(config)
     await interaction.response.send_message(
-        f"💬 Message actuel :\n> _{config['custom_message']}_", ephemeral=True
+        f"✅ PAS mis à jour : **{montant} € / ticket**", ephemeral=True
     )
+
+@setpas.error
+async def setpas_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.MissingRole):
+        await interaction.response.send_message("❌ Permission refusée.", ephemeral=True)
+
+@bot.tree.command(name="config", description="Affiche la configuration actuelle du bot")
+async def view_config(interaction: discord.Interaction):
+    embed = discord.Embed(title="⚙️ Configuration du bot", color=0x5865F2)
+    embed.add_field(name="💬 Message custom", value=f"_{config['custom_message']}_", inline=False)
+    embed.add_field(name="💳 PAS", value=f"**{config.get('pas', '?')} € / ticket**", inline=False)
+    await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ─── LANCEMENT ────────────────────────────────────────────────────────────────
 TOKEN = os.getenv("DISCORD_TOKEN")
