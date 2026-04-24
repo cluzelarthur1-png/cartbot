@@ -9,7 +9,7 @@ from datetime import datetime, timezone
  
 # ─── CONFIG ───────────────────────────────────────────────────────────────────
 CART_CHANNEL_NAME    = "cartbot"
-CLAIM_CHANNEL_NAME   = "🎟️ wts carts"
+CLAIM_CHANNEL_NAME   = "🎟️-wts-carts"
 TICKET_CATEGORY_NAME = "Tickets"
 ADMIN_ROLE_NAME      = "Admin"
 CONFIG_FILE          = "config.json"
