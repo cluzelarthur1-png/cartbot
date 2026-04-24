@@ -162,73 +162,43 @@ def parse_any_embed(embed: discord.Embed) -> dict | None:
 # ─── CONSTRUCTION EMBED CLAIM ─────────────────────────────────────────────────
 def build_claim_embed(cart: dict, custom_msg: str, pas: str) -> discord.Embed:
     event_name = cart.get("event", "")
-    embed = discord.Embed(
-        title="〔 🎟️ 〕 Cart disponible",
-        description=(
-            f"**{event_name}**\n"
-            f"╔══════════════════════════╗\n"
-            f"*{custom_msg}*\n"
-            f"╚══════════════════════════╝"
-        ) if event_name else f"*{custom_msg}*",
-        color=0x2B2D31,
-    )
 
-    # Ligne 1 : Site + Date
-    cols1 = []
-    if cart.get("site"):       cols1.append(("🌐  Site",  cart["site"]))
-    if cart.get("event_date"): cols1.append(("📅  Date",  cart["event_date"]))
-    for name, val in cols1:
-        embed.add_field(name=name, value=val, inline=True)
-    if len(cols1) == 2:
-        embed.add_field(name="\u200b", value="\u200b", inline=True)
+    # Description compacte : tout en une seule zone
+    lines = []
+    if event_name:
+        lines.append(f"### {event_name}")
+    lines.append(f"-# {custom_msg}")
+    lines.append("")
 
-    # Catégorie
-    if cart.get("section"):
-        embed.add_field(name="🏟️  Catégorie", value=f"```{cart['section']}```", inline=False)
+    info = []
+    if cart.get("site"):       info.append(f"**Site** — {cart['site']}")
+    if cart.get("event_date"): info.append(f"**Date** — {cart['event_date']}")
+    if cart.get("section"):    info.append(f"**Cat.** — {cart['section']}")
+    if cart.get("seats"):      info.append(f"**Places** — {cart['seats']}")
+    if cart.get("row"):        info.append(f"**Rangée** — {cart['row']}")
+    if cart.get("price"):      info.append(f"**Prix** — {cart['price']}")
+    if cart.get("access"):     info.append(f"**Accès** — {cart['access']}")
+    lines.extend(info)
 
-    # Ligne 2 : Places + Rangée + Prix
-    cols2 = []
-    if cart.get("seats"): cols2.append(("💺  Places",     f"`{cart['seats']}`"))
-    if cart.get("row"):   cols2.append(("📍  Rangée",     f"`{cart['row']}`"))
-    if cart.get("price"): cols2.append(("💶  Prix total", f"`{cart['price']}`"))
-    for name, val in cols2:
-        embed.add_field(name=name, value=val, inline=True)
-
-    # Accès
-    if cart.get("access"):
-        embed.add_field(name="🚪  Accès", value=cart["access"], inline=False)
-
-    # Expiration
     ts = cart.get("expires_ts")
     if ts == -1:
-        embed.add_field(name="⏳  Expiration", value="~~Active~~ — **Cart expiré**", inline=False)
+        lines.append(f"**Expire** — ~~expiré~~")
     elif ts:
-        embed.add_field(
-            name="⏳  Expiration",
-            value=f"<t:{ts}:R>  ·  <t:{ts}:T>",
-            inline=False
-        )
+        lines.append(f"**Expire** — <t:{ts}:R>")
 
-    # PAS
-    embed.add_field(name="\u200b", value="▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬", inline=False)
-    embed.add_field(
-        name="💳  Pay After Success",
-        value=f"```{pas} € / ticket```",
-        inline=True
-    )
+    lines.append("")
+    lines.append(f"💳 **PAS — {pas} € / ticket**")
+    lines.append(f"-# ⚠️ En cliquant sur Claim Cart, vous certifiez disposer des extensions requises et vous engagez à honorer le PAS.")
 
-    # Avertissement
-    embed.add_field(name="\u200b", value="▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬", inline=False)
-    embed.add_field(
-        name="\u200b",
-        value="⚠️  *En cliquant sur **Claim Cart**, vous certifiez disposer des extensions requises et vous engagez à honorer le PAS.*",
-        inline=False
+    embed = discord.Embed(
+        description="\n".join(lines),
+        color=0x2B2D31,
     )
 
     if cart.get("image_url"):
         embed.set_thumbnail(url=cart["image_url"])
 
-    embed.set_footer(text="ShopTesPlaces  ·  Accès sur demande uniquement")
+    embed.set_footer(text="ShopTesPlaces")
     embed.timestamp = datetime.now(timezone.utc)
     return embed
 
