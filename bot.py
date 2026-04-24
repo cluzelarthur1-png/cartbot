@@ -49,11 +49,21 @@ def is_admin():
 # ─── PARSER EXPIRATION ────────────────────────────────────────────────────────
 def parse_expires(value: str) -> int | None:
     """
-    Convertit 'dans X minutes/heures', 'in X minutes/hours'
-    en timestamp Unix. Retourne -1 si déjà expiré, None si non parsable.
+    Gère :
+    - Timestamp Discord natif : <t:1234567890:R>
+    - Texte : 'dans X minutes/heures', 'in X minutes/hours'
+    Retourne -1 si déjà expiré, None si non parsable.
     """
     now = int(datetime.now(timezone.utc).timestamp())
-    v   = value.lower().strip()
+    v   = value.strip()
+
+    # Timestamp Discord natif <t:XXXX:R> ou <t:XXXX:T> etc.
+    m = re.search(r"<t:(\d+)(?::[RrtTdDf])?>", v)
+    if m:
+        ts = int(m.group(1))
+        return ts if ts > now else -1
+
+    v = v.lower()
 
     # "dans X minutes / heures / secondes"
     m = re.search(r"dans\s+(\d+)\s+(minute|heure|seconde)", v)
@@ -151,19 +161,22 @@ def parse_any_embed(embed: discord.Embed) -> dict | None:
 
 # ─── CONSTRUCTION EMBED CLAIM ─────────────────────────────────────────────────
 def build_claim_embed(cart: dict, custom_msg: str, pas: str) -> discord.Embed:
+    event_name = cart.get("event", "")
     embed = discord.Embed(
-        title="🎟️  Cart disponible",
-        description=f"*{custom_msg}*",
-        color=0xE8B84B,
+        title="〔 🎟️ 〕 Cart disponible",
+        description=(
+            f"**{event_name}**\n"
+            f"╔══════════════════════════╗\n"
+            f"*{custom_msg}*\n"
+            f"╚══════════════════════════╝"
+        ) if event_name else f"*{custom_msg}*",
+        color=0x2B2D31,
     )
 
-    if cart.get("event"):
-        embed.add_field(name="🎤  Événement", value=f"### {cart['event']}", inline=False)
-
-    # Ligne 1 : Site + Date concert
+    # Ligne 1 : Site + Date
     cols1 = []
-    if cart.get("site"):       cols1.append(("🌐  Site",         cart["site"]))
-    if cart.get("event_date"): cols1.append(("📅  Date concert", cart["event_date"]))
+    if cart.get("site"):       cols1.append(("🌐  Site",  cart["site"]))
+    if cart.get("event_date"): cols1.append(("📅  Date",  cart["event_date"]))
     for name, val in cols1:
         embed.add_field(name=name, value=val, inline=True)
     if len(cols1) == 2:
@@ -188,26 +201,34 @@ def build_claim_embed(cart: dict, custom_msg: str, pas: str) -> discord.Embed:
     # Expiration
     ts = cart.get("expires_ts")
     if ts == -1:
-        embed.add_field(name="⏱️  Expiration", value="⚠️ **Cart déjà expiré**", inline=False)
+        embed.add_field(name="⏳  Expiration", value="~~Active~~ — **Cart expiré**", inline=False)
     elif ts:
         embed.add_field(
-            name="⏱️  Expiration",
-            value=f"<t:{ts}:R>  *(le <t:{ts}:T>)*",
+            name="⏳  Expiration",
+            value=f"<t:{ts}:R>  ·  <t:{ts}:T>",
             inline=False
         )
 
     # PAS
-    embed.add_field(name="\u200b", value="──────────────────────────", inline=False)
+    embed.add_field(name="\u200b", value="▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬", inline=False)
     embed.add_field(
         name="💳  Pay After Success",
         value=f"```{pas} € / ticket```",
+        inline=True
+    )
+
+    # Avertissement
+    embed.add_field(name="\u200b", value="▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬▬", inline=False)
+    embed.add_field(
+        name="\u200b",
+        value="⚠️  *En cliquant sur **Claim Cart**, vous certifiez disposer des extensions requises et vous engagez à honorer le PAS.*",
         inline=False
     )
 
     if cart.get("image_url"):
         embed.set_thumbnail(url=cart["image_url"])
 
-    embed.set_footer(text="ShopTesPlaces  •  Clique sur Claim Cart pour ouvrir un ticket")
+    embed.set_footer(text="ShopTesPlaces  ·  Accès sur demande uniquement")
     embed.timestamp = datetime.now(timezone.utc)
     return embed
 
@@ -283,7 +304,7 @@ class ClaimView(discord.ui.View):
             color=0x57F287,
         )
         if cart.get("event"):
-            ticket_embed.add_field(name="🎤  Événement", value=f"### {cart['event']}", inline=False)
+            ticket_embed.add_field(name="🎤  Événement", value=f"**{cart['event']}**", inline=False)
 
         row = []
         if cart.get("event_date"): row.append(("📅  Date",    cart["event_date"]))
@@ -328,7 +349,7 @@ class ClaimView(discord.ui.View):
         )
 
         button.disabled = True
-        button.label    = f"✅  Claimé par {user.display_name}"
+        button.label    = f"✅  Claimed by {user.display_name}"
         button.style    = discord.ButtonStyle.secondary
         await interaction.message.edit(view=self)
         active_carts.pop(interaction.message.id, None)
