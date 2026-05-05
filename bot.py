@@ -365,6 +365,17 @@ async def view_config(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed, ephemeral=True)
 
 # ─── COMMANDES INVITATIONS ────────────────────────────────────────────────────
+
+@bot.tree.command(name="sync", description="Sync les commandes slash")
+@is_admin()
+async def sync_cmd(interaction: discord.Interaction):
+    synced = await bot.tree.sync()
+    await interaction.response.send_message(f"✅ {len(synced)} commandes synchronisées.", ephemeral=True)
+
+@sync_cmd.error
+async def sync_error(interaction: discord.Interaction, error):
+    await interaction.response.send_message("❌ Permission refusée.", ephemeral=True)
+
 @bot.tree.command(name="invites", description="Voir les invitations d'un membre")
 @app_commands.describe(membre="Le membre à inspecter (vide = toi-même)")
 async def invites_cmd(interaction: discord.Interaction, membre: discord.Member = None):
