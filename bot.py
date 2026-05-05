@@ -438,7 +438,7 @@ async def leaderboard(interaction: discord.Interaction):
     embed.set_footer(text=f"ShopTesPlaces  ·  {len(scores)} membre(s) classé(s)  ·  {total_valid} invitations valides  ·  {total_fake} fakes")
     await interaction.followup.send(embed=embed)
 
-@bot.tree.command(name="addbonus", description="Ajouter des invitations bonus à un membre")
+@bot.tree.command(name="addbonus", description="Ajouter des bonus à un membre")
 @app_commands.describe(membre="Le membre", nombre="Nombre de bonus à ajouter")
 @is_admin()
 async def addbonus(interaction: discord.Interaction, membre: discord.Member, nombre: int):
@@ -446,7 +446,7 @@ async def addbonus(interaction: discord.Interaction, membre: discord.Member, nom
     invites_data["bonus"][uid] = invites_data["bonus"].get(uid, 0) + nombre
     save_invites_data()
     await interaction.response.send_message(
-        f"🎁 **+{nombre}** bonus ajouté à {membre.mention} — Total bonus : **{invites_data['bonus'][uid]}**", ephemeral=True
+        f"🎁 **+{nombre}** bonus ajouté à **{membre.display_name}** — Total : **{invites_data['bonus'][uid]}**", ephemeral=True
     )
 
 @addbonus.error
@@ -460,10 +460,75 @@ async def setbonus(interaction: discord.Interaction, membre: discord.Member, nom
     uid = str(membre.id)
     invites_data["bonus"][uid] = nombre
     save_invites_data()
-    await interaction.response.send_message(f"🎁 Bonus de {membre.mention} défini à **{nombre}**", ephemeral=True)
+    await interaction.response.send_message(f"🎁 Bonus de **{membre.display_name}** défini à **{nombre}**", ephemeral=True)
 
 @setbonus.error
 async def setbonus_error(interaction: discord.Interaction, error):
+    await interaction.response.send_message("❌ Permission refusée.", ephemeral=True)
+
+@bot.tree.command(name="bonusmulti", description="Ajouter des bonus à plusieurs membres en une fois")
+@app_commands.describe(
+    liste="Format : pseudo1:5 pseudo2:3 pseudo3:10  (séparés par des espaces)"
+)
+@is_admin()
+async def bonusmulti(interaction: discord.Interaction, liste: str):
+    """
+    Exemple : /bonusmulti liste:mika:5 arthur:3 lucas:10
+    Cherche les membres par nom d'affichage ou username, sans mention.
+    """
+    await interaction.response.defer(ephemeral=True)
+    guild   = interaction.guild
+    entries = liste.strip().split()
+    results = []
+    errors  = []
+
+    for entry in entries:
+        if ":" not in entry:
+            errors.append(f"`{entry}` — format invalide (utilise `pseudo:nombre`)")
+            continue
+        parts = entry.rsplit(":", 1)
+        name_query = parts[0].strip().lower()
+        try:
+            qty = int(parts[1])
+        except ValueError:
+            errors.append(f"`{entry}` — quantité invalide")
+            continue
+
+        # Cherche le membre par display_name ou username
+        member = discord.utils.find(
+            lambda m: m.display_name.lower() == name_query or m.name.lower() == name_query,
+            guild.members
+        )
+        if not member:
+            # Recherche partielle
+            member = discord.utils.find(
+                lambda m: name_query in m.display_name.lower() or name_query in m.name.lower(),
+                guild.members
+            )
+
+        if not member:
+            errors.append(f"`{name_query}` — membre introuvable")
+            continue
+
+        uid = str(member.id)
+        invites_data["bonus"][uid] = invites_data["bonus"].get(uid, 0) + qty
+        results.append(f"✅  **{member.display_name}** → +{qty} *(total : {invites_data['bonus'][uid]})*")
+
+    if results:
+        save_invites_data()
+
+    lines = []
+    if results:
+        lines.append(f"🎁 **{len(results)} bonus ajouté(s) :**")
+        lines.extend(results)
+    if errors:
+        lines.append(f"\n⚠️ **{len(errors)} erreur(s) :**")
+        lines.extend(errors)
+
+    await interaction.followup.send("\n".join(lines), ephemeral=True)
+
+@bonusmulti.error
+async def bonusmulti_error(interaction: discord.Interaction, error):
     await interaction.response.send_message("❌ Permission refusée.", ephemeral=True)
 
 @bot.tree.command(name="resetinvites", description="Remettre à zéro les invitations d'un membre")
